@@ -1,0 +1,85 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Description: >
+  Cloud Event - distributed, fault-tolerant event processing pipeline.
+  Flow: S3 upload -> Lambda -> DynamoDB, with an SQS dead-letter queue
+  for events that fail after Lambda's automatic retries.
+
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 256
+    Runtime: nodejs20.x
+
+Resources:
+
+  UploadBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "cloud-event-uploads-${AWS::AccountId}"
+
+  ResultsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: CloudEventResults
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+
+  ProcessingDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: cloud-event-dlq
+      MessageRetentionPeriod: 1209600
+
+  ProcessEventFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/processEvent.handler
+      CodeUri: .
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref ResultsTable
+
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Sub "cloud-event-uploads-${AWS::AccountId}"
+
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ResultsTable
+
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt ProcessingDLQ.QueueName
+
+      EventInvokeConfig:
+        MaximumRetryAttempts: 2
+        DestinationConfig:
+          OnFailure:
+            Type: SQS
+            Destination: !GetAtt ProcessingDLQ.Arn
+
+      Events:
+        S3Upload:
+          Type: S3
+          Properties:
+            Bucket: !Ref UploadBucket
+            Events: s3:ObjectCreated:*
+
+Outputs:
+
+  UploadBucketName:
+    Description: Upload files here to trigger processing
+    Value: !Ref UploadBucket
+
+  ResultsTableName:
+    Description: DynamoDB table holding processed results
+    Value: !Ref ResultsTable
+
+  DeadLetterQueueUrl:
+    Description: SQS queue for events that failed after retries
+    Value: !Ref ProcessingDLQ

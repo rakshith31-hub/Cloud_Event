@@ -1,0 +1,21 @@
+{
+  "Records": [
+    {
+      "eventVersion": "2.1",
+      "eventSource": "aws:s3",
+      "awsRegion": "ap-south-1",
+      "eventTime": "2026-08-07T10:00:00.000Z",
+      "eventName": "ObjectCreated:Put",
+      "s3": {
+        "bucket": {
+          "name": "cloud-event-uploads-123456789012",
+          "arn": "arn:aws:s3:::cloud-event-uploads-123456789012"
+        },
+        "object": {
+          "key": "sample-input.txt",
+          "size": 1024
+        }
+      }
+    }
+  ]
+}
